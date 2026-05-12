@@ -1,8 +1,9 @@
 # NovaPAI Ruby SDK Example
 # Install: gem install ruby-openai
-# Docs: https://api.novapai.ai
+# Docs: https://novapai.ai
 
 require "openai"
+require "json"
 
 client = OpenAI::Client.new(
   access_token: "your-api-key",
@@ -54,6 +55,67 @@ def multi_turn_chat(client)
   puts chat.call("Multiply that by 10")
 end
 
+# ── Function Calling ────────────────────────────────────────
+def function_calling(client)
+  response = client.chat(
+    parameters: {
+      model: "deepseek-v4-pro",
+      messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "get_weather",
+          description: "Get current weather for a city",
+          parameters: {
+            type: "object",
+            properties: {
+              city: { type: "string", description: "City name" }
+            },
+            required: ["city"]
+          }
+        }
+      }]
+    }
+  )
+
+  tool_call = response.dig("choices", 0, "message", "tool_calls", 0)
+  puts "Function: #{tool_call.dig("function", "name")}"
+  puts "Args: #{tool_call.dig("function", "arguments")}"
+
+  # Continue with tool result
+  result = { city: "Tokyo", temperature: 22, condition: "sunny" }.to_json
+  final = client.chat(
+    parameters: {
+      model: "deepseek-v4-pro",
+      messages: [
+        { role: "user", content: "What's the weather in Tokyo?" },
+        { role: "assistant", tool_calls: [tool_call] },
+        { role: "tool", tool_call_id: tool_call["id"], content: result }
+      ]
+    }
+  )
+  puts final.dig("choices", 0, "message", "content")
+end
+
+# ── JSON Mode (Structured Output) ───────────────────────────
+def json_mode(client)
+  response = client.chat(
+    parameters: {
+      model: "deepseek-v4-pro",
+      messages: [
+        { role: "system", content: "Extract company info as JSON." },
+        { role: "user", content: "Apple Inc. is based in Cupertino, founded in 1976." }
+      ],
+      response_format: { type: "json_object" }
+    }
+  )
+
+  data = JSON.parse(response.dig("choices", 0, "message", "content"))
+  puts JSON.pretty_generate(data)
+end
+
 basic_chat(client)
 stream_chat(client)
 multi_turn_chat(client)
+function_calling(client)
+json_mode(client)
